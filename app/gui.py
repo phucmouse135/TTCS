@@ -877,15 +877,20 @@ class MainWindow(QMainWindow):
             # Create DataFrame
             df = pd.DataFrame(attendance_data)
             
-            # Generate filename with timestamp
+            # Generate filename with timestamp - fix the path issue by removing any control characters
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
             # Create output directory
-            output_dir = "D:\ProjectTTCS\output"
+            output_dir = "D:\\ProjectTTCS\\output"
             os.makedirs(output_dir, exist_ok=True)
             
-            # Full path to Excel file
-            output_file = f"{output_dir}\attendance_report_{timestamp}.xlsx"
+            # Full path to Excel file - ensure no control characters in the path
+            output_file = f"{output_dir}\\attendance_report_{timestamp}.xlsx"
+            
+            # Ensure there are no control characters in the filename
+            output_file = ''.join(c for c in output_file if ord(c) >= 32)
+            
+            print(f"Saving attendance data to {output_file}")
             
             # Write to Excel
             df.to_excel(output_file, index=False)
