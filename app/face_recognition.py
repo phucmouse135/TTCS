@@ -16,6 +16,7 @@ import pandas as pd
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
+from app.anti_spoofing import AntiSpoofing
 
 # Ensure we're using CPU instead of CUDA
 device = torch.device('cpu')
@@ -28,6 +29,9 @@ class FaceRecognition:
         self.mtcnn = MTCNN(keep_all=True, min_face_size=20, thresholds=[0.5, 0.6, 0.6], device=self.device)
         # Initialize the InceptionResnetV1 model for face recognition
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+        
+        # Initialize the anti-spoofing module
+        self.anti_spoofing = AntiSpoofing()
         
         # Set recognition threshold
         self.recognition_threshold = 0.6  # Adjust as needed for accuracy
@@ -149,50 +153,75 @@ class FaceRecognition:
     def extract_face(self, img):
         """Extract faces from an image and return face images"""
         try:
-            # Get face detection boxes
-            boxes, probs, landmarks = self.mtcnn.detect(img, landmarks=True)
+            # Convert to RGB if needed
+            if len(img.shape) == 2:  # Grayscale
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            elif img.shape[2] == 4:  # RGBA
+                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+                
+            # Use OpenCV's face detector as an alternative to MTCNN
+            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
             
-            # Check if any faces were detected
-            if boxes is not None:
-                faces = []
-                for box in boxes:
-                    # Extract face area
-                    box = [int(b) for b in box]
-                    x1, y1, x2, y2 = box
-                    # Ensure coordinates are within image boundaries
-                    x1, y1 = max(0, x1), max(0, y1)
-                    x2, y2 = min(img.shape[1], x2), min(img.shape[0], y2)
-                    # Extract the face
-                    face = img[y1:y2, x1:x2]
-                    # Only add if face dimensions are valid
-                    if face.size > 0 and face.shape[0] > 0 and face.shape[1] > 0:
-                        faces.append((face, box))
-                return faces
-            else:
-                return []
+            # Convert to grayscale for face detection
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+            
+            # Detect faces
+            faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+            
+            result = []
+            for (x, y, w, h) in faces:
+                # Extract face region
+                face_img = img[y:y+h, x:x+w]
+                
+                # Add some margin
+                margin_x = int(w * 0.1)
+                margin_y = int(h * 0.1)
+                
+                # Calculate coordinates with margin (ensuring they're within image bounds)
+                x1 = max(0, x - margin_x)
+                y1 = max(0, y - margin_y)
+                x2 = min(img.shape[1], x + w + margin_x)
+                y2 = min(img.shape[0], y + h + margin_y)
+                
+                # Extract face with margin
+                face_with_margin = img[y1:y2, x1:x2]
+                
+                # Only add if dimensions are valid
+                if face_with_margin.size > 0 and face_with_margin.shape[0] > 0 and face_with_margin.shape[1] > 0:
+                    result.append((face_with_margin, [x1, y1, x2, y2]))
+            
+            return result
         except Exception as e:
-            print(f"Error in face extraction: {e}")
+            print(f"Error extracting faces: {e}")
             return []
-    
+
     def get_embedding(self, face_img):
+        """Get the embedding for a face image"""
         try:
-            # Detect face and get embedding
-            face_tensor = self.mtcnn.forward(face_img)
+            # Convert image to RGB (if grayscale)
+            if len(face_img.shape) == 2:
+                face_img = cv2.cvtColor(face_img, cv2.COLOR_GRAY2RGB)
+            elif face_img.shape[2] == 4:  # RGBA
+                face_img = cv2.cvtColor(face_img, cv2.COLOR_RGBA2RGB)
             
-            # Check if a face was detected
-            if face_tensor is None:
-                print("No face detected in the image.")
-                return None
+            # Resize image to expected dimensions
+            face_img = cv2.resize(face_img, (160, 160))
             
-            # Fix tensor shape issues - ensure it's 4D [batch, channels, height, width]
-            if face_tensor.dim() == 5:  # If shape is [1, 1, 3, height, width]
-                face_tensor = face_tensor.squeeze(1)  # Remove extra dimension
+            # Transpose dimensions for PyTorch (H,W,C) -> (C,H,W)
+            face_tensor = torch.from_numpy(face_img).permute(2, 0, 1).float()
             
-            # Move to device and get embedding
-            face_tensor = face_tensor.to(self.device)
-            embedding = self.resnet(face_tensor).detach().cpu()
-            return embedding
-        except RuntimeError as e:
+            # Scale pixel values to [0, 1]
+            face_tensor = face_tensor / 255.0
+            
+            # Add batch dimension and send to device
+            face_tensor = face_tensor.unsqueeze(0).to(self.device)
+            
+            # Get embedding from model
+            with torch.no_grad():
+                embedding = self.resnet(face_tensor)
+                
+            return embedding.detach().cpu()
+        except Exception as e:
             print(f"Error in get_embedding: {e}")
             return None
 
@@ -525,14 +554,13 @@ class FaceRecognition:
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            print(f"Error in collect_faces_from_camera: {e}\n{error_details}")
-            # Make sure windows are closed
+            print(f"Error in collect_faces_from_camera: {e}\n{error_details}")            # Make sure windows are closed
             try:
                 cv2.destroyAllWindows()
             except:
                 pass
             return False, f"Error collecting faces: {str(e)}"
-
+            
     def process_video_feed(self, schedule_id, update_callback=None):
         """Process video feed for attendance"""
         try:
@@ -546,6 +574,10 @@ class FaceRecognition:
             running = True
             frame_count = 0
             
+            # For anti-spoofing: store previous face images for each detected face
+            previous_faces = {}
+            face_sequence = {}  # Store sequences of faces for multi-frame analysis
+            
             # Face detection and recognition loop
             while running and frame_count < 150:  # Process max 150 frames
                 ret, frame = cap.read()
@@ -555,7 +587,7 @@ class FaceRecognition:
                 # Make a copy for display
                 display_frame = frame.copy()
                 
-                # Extract faces from frame
+                # Extract faces using OpenCV instead of MTCNN
                 faces = self.extract_face(frame)
                 
                 # Process detected faces
@@ -581,52 +613,31 @@ class FaceRecognition:
                             except:
                                 name = "Unknown"
                         
+                        # Current timestamp
+                        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
                         # Mark attendance for the recognized student
                         if student_code not in recognized_students:
                             recognized_students[student_code] = {
                                 'name': name,
                                 'similarity': similarity,
                                 'count': 1,
-                                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                'timestamp': current_time
                             }
-                            
-                            # Call update callback if provided to update UI in real-time
-                            if update_callback and callable(update_callback):
-                                # Only update UI after detecting a student multiple times to avoid false positives
-                                if student_code in recognized_students and recognized_students[student_code]['count'] >= 3:
-                                    student_data = {
-                                        'student_code': student_code,
-                                        'name': name,
-                                        'present': True,
-                                        'similarity': similarity,
-                                        'schedule_id': schedule_id,
-                                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                    }
-                                    update_callback(student_data)
                         else:
-                            # Update the similarity if this detection is better
+                            recognized_students[student_code]['count'] += 1
                             if similarity > recognized_students[student_code]['similarity']:
                                 recognized_students[student_code]['similarity'] = similarity
-                            recognized_students[student_code]['count'] += 1
-                            
-                            # Call update callback when detection count reaches threshold
-                            if update_callback and callable(update_callback) and recognized_students[student_code]['count'] == 3:
-                                student_data = {
-                                    'student_code': student_code,
-                                    'name': name,
-                                    'present': True,
-                                    'similarity': similarity,
-                                    'schedule_id': schedule_id,
-                                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                }
-                                update_callback(student_data)
                         
                         # Display recognition results
-                        cv2.putText(display_frame, f"Student: {name}", (x1, y1 - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                        cv2.putText(display_frame, f"Similarity: {similarity:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.putText(display_frame, f"Student: {name}", (x1, y1 - 30), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.putText(display_frame, f"Similarity: {similarity:.2f}", (x1, y1 - 10), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                     else:
                         # Display "Unknown" for unrecognized faces
-                        cv2.putText(display_frame, "Unknown", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        cv2.putText(display_frame, "Unknown", (x1, y1 - 10), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 
                 # Show the frame
                 cv2.imshow("Attendance", display_frame)
@@ -655,12 +666,13 @@ class FaceRecognition:
                         'student_code': student_code,
                         'name': data['name'],
                         'present': True,
+                        'status': 'Có mặt',
                         'similarity': data['similarity'],
                         'schedule_id': schedule_id,
                         'timestamp': data['timestamp']
                     })
             
-            return True, attendance_results  # Return the actual results list
+            return True, attendance_results
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
@@ -760,9 +772,9 @@ class FaceRecognition:
     def get_all_students(self):
         """Get all students from the database"""
         try:
-            # Make sure the DataFrame is up to date
+            # Make sure the DataFrame is up-to-date
             if os.path.exists(self.database_path):
-                self.df = pd.read_csv(self.database_path)
+                self.df = pd.read_csv(self.database_path, encoding='utf-8')
             
             # Return a copy of the DataFrame
             return self.df.copy()
