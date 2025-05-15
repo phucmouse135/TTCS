@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from datetime import datetime
 
-from app.face_recognition import FaceRecognition
+from app.enhanced_face_recognition import EnhancedFaceRecognition
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -19,8 +19,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Hệ thống điểm danh học sinh")
         self.setGeometry(100, 100, 1200, 700)
         
-        # Initialize face recognition
-        self.face_recognition = FaceRecognition()
+        # Initialize face recognition with anti-spoofing
+        self.face_recognition = EnhancedFaceRecognition()
         
         # Setup UI
         self.setup_ui()

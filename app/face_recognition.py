@@ -16,6 +16,7 @@ import pandas as pd
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
+from app.anti_spoofing import AntiSpoofing
 
 # Ensure we're using CPU instead of CUDA
 device = torch.device('cpu')
@@ -28,6 +29,9 @@ class FaceRecognition:
         self.mtcnn = MTCNN(keep_all=True, min_face_size=20, thresholds=[0.5, 0.6, 0.6], device=self.device)
         # Initialize the InceptionResnetV1 model for face recognition
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+        
+        # Initialize the anti-spoofing module
+        self.anti_spoofing = AntiSpoofing()
         
         # Set recognition threshold
         self.recognition_threshold = 0.6  # Adjust as needed for accuracy
@@ -550,14 +554,13 @@ class FaceRecognition:
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            print(f"Error in collect_faces_from_camera: {e}\n{error_details}")
-            # Make sure windows are closed
+            print(f"Error in collect_faces_from_camera: {e}\n{error_details}")            # Make sure windows are closed
             try:
                 cv2.destroyAllWindows()
             except:
                 pass
             return False, f"Error collecting faces: {str(e)}"
-
+            
     def process_video_feed(self, schedule_id, update_callback=None):
         """Process video feed for attendance"""
         try:
@@ -570,6 +573,10 @@ class FaceRecognition:
             recognized_students = {}
             running = True
             frame_count = 0
+            
+            # For anti-spoofing: store previous face images for each detected face
+            previous_faces = {}
+            face_sequence = {}  # Store sequences of faces for multi-frame analysis
             
             # Face detection and recognition loop
             while running and frame_count < 150:  # Process max 150 frames
