@@ -189,5 +189,12 @@ class DatabaseManager:
         self.conn.commit()
         return self.cursor.rowcount > 0
 
+    def get_student_id_by_code(self, student_code):
+        """Get student ID from student_code"""
+        cur = self.conn.cursor()
+        cur.execute("SELECT id FROM students WHERE student_code = ?", (student_code,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
 if __name__ == "__main__":
     init_db()
