@@ -1,6 +1,5 @@
-
 @echo off
-call venv\Scripts\activate.bat
 echo Running application in virtual environment...
+call venv\Scripts\activate
 python main.py
 pause

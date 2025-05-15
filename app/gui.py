@@ -5,13 +5,20 @@ from PyQt5.QtWidgets import (QMainWindow, QTableWidget, QTableWidgetItem, QVBoxL
                              QDialog, QProgressDialog)
 from PyQt5.QtCore import Qt, QDate, QTime
 from PyQt5.QtGui import QPixmap
+import tkinter as tk
+from tkinter import ttk
 import os
 import pandas as pd
 import cv2
 import numpy as np
 from datetime import datetime
+import sqlite3
 
-from app.face_recognition import FaceRecognition
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.face_recognition import FaceRecognition  # Use the correct module path
+from app.database import DatabaseManager as Database
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -22,8 +29,22 @@ class MainWindow(QMainWindow):
         # Initialize face recognition
         self.face_recognition = FaceRecognition()
         
+        # Database connection
+        # Check if 'db' attribute is missing and add it
+        if not hasattr(self, 'db'):
+            self.db = Database()  # Make sure to import Database class if needed
+        
+        # Ensure database tables are created
+        self.db.create_tables()
+        
         # Setup UI
         self.setup_ui()
+        
+        # Now that UI is fully set up, refresh class list
+        try:
+            self.refresh_classes_list()
+        except:
+            pass  # Ignore errors during initial load
     
     def setup_ui(self):
         # Create central widget
@@ -42,6 +63,8 @@ class MainWindow(QMainWindow):
         self.setup_schedule_tab()
         self.setup_attendance_tab()
         self.setup_report_tab()
+        self.setup_classes_tab()  # Setup the new tab
+        self.setup_class_tab()
     
     def setup_student_tab(self):
         # Create student tab
@@ -325,6 +348,158 @@ class MainWindow(QMainWindow):
         
         # Load reports
         self.load_reports()
+    def setup_classes_tab(self):
+        """Set up the class management tab with both class management and student assignment sections"""
+        # Create class tab using PyQt5
+        classes_tab = QWidget()
+        main_layout = QVBoxLayout(classes_tab)
+        
+        # Add title
+        title = QLabel("Quản lý Lớp Học")
+        title.setStyleSheet("font-size: 18pt; font-weight: bold;")
+        title.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(title)
+        
+        # Create horizontal split layout
+        split_layout = QHBoxLayout()
+        main_layout.addLayout(split_layout)
+        
+        # Left frame - Class information
+        left_frame = QWidget()
+        left_layout = QVBoxLayout(left_frame)
+        left_title = QLabel("Thông tin lớp học")
+        left_title.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        left_layout.addWidget(left_title)
+        
+        # Form layout
+        form_layout = QFormLayout()
+        
+        # Class ID (hidden)
+        self.class_id_input = QLineEdit()
+        self.class_id_input.setVisible(False)
+        
+        # Class name
+        self.class_name_input = QLineEdit()
+        form_layout.addRow("Tên lớp:", self.class_name_input)
+        
+        # Class description
+        self.class_desc_input = QLineEdit()
+        form_layout.addRow("Mô tả:", self.class_desc_input)
+        
+        left_layout.addLayout(form_layout)
+        
+        # Buttons layout
+        buttons_layout = QHBoxLayout()
+        
+        # Add class button
+        add_button = QPushButton("Thêm Lớp")
+        add_button.setStyleSheet("background-color: #4CAF50; color: white;")
+        add_button.clicked.connect(self.add_class)
+        buttons_layout.addWidget(add_button)
+        
+        # Update class button
+        update_button = QPushButton("Cập Nhật")
+        update_button.setStyleSheet("background-color: #2196F3; color: white;")
+        update_button.clicked.connect(self.update_class)
+        buttons_layout.addWidget(update_button)
+        
+        # Delete class button
+        delete_button = QPushButton("Xóa Lớp")
+        delete_button.setStyleSheet("background-color: #f44336; color: white;")
+        delete_button.clicked.connect(self.delete_class)
+        buttons_layout.addWidget(delete_button)
+        
+        # Clear form button
+        clear_button = QPushButton("Làm Mới")
+        clear_button.clicked.connect(self.clear_class_form)
+        buttons_layout.addWidget(clear_button)
+        
+        left_layout.addLayout(buttons_layout)
+        
+        # Right frame - Class list
+        right_frame = QWidget()
+        right_layout = QVBoxLayout(right_frame)
+        right_title = QLabel("Danh sách lớp học")
+        right_title.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        right_layout.addWidget(right_title)
+        
+        # Class table
+        self.classes_table = QTableWidget()
+        self.classes_table.setColumnCount(4)
+        self.classes_table.setHorizontalHeaderLabels(["ID", "Tên Lớp", "Mô Tả", "Ngày Tạo"])
+        self.classes_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.classes_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.classes_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.classes_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.classes_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.classes_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.classes_table.clicked.connect(self.on_class_select)
+        
+        right_layout.addWidget(self.classes_table)
+        
+        # Add frames to split layout
+        split_layout.addWidget(left_frame)
+        split_layout.addWidget(right_frame)
+        
+        # Add the tab to the tab widget
+        self.tab_widget.addTab(classes_tab, "Quản lý Lớp")
+        
+        ttk.Label(form_frame, text="Mô tả:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.class_desc_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.class_desc_var, width=30).grid(row=1, column=1, padx=5, pady=5)
+        
+        # Buttons
+        btn_frame = ttk.Frame(form_frame)
+        btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(btn_frame, text="Thêm lớp", command=self.add_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cập nhật", command=self.update_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Xóa lớp", command=self.delete_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Làm mới", command=self.clear_class_form).pack(side=tk.LEFT, padx=5)
+        
+        # Right frame - Class list
+        list_frame = ttk.Frame(right_frame)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Treeview for classes
+        columns = ("ID", "Tên lớp", "Mô tả", "Ngày tạo")
+        self.classes_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=10)
+        
+        self.classes_tree.heading("ID", text="ID")
+        self.classes_tree.heading("Tên lớp", text="Tên lớp")
+        self.classes_tree.heading("Mô tả", text="Mô tả")
+        self.classes_tree.heading("Ngày tạo", text="Ngày tạo")
+        
+        self.classes_tree.column("ID", width=50)
+        self.classes_tree.column("Tên lớp", width=150)
+        self.classes_tree.column("Mô tả", width=250)
+        self.classes_tree.column("Ngày tạo", width=150)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.classes_tree.yview)
+        self.classes_tree.configure(yscroll=scrollbar.set)
+        
+        self.classes_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Bind selection event
+        self.classes_tree.bind("<<TreeviewSelect>>", self.on_class_select)
+        
+        # Student assignment section
+        assign_frame = ttk.LabelFrame(main_frame, text="Phân công học sinh")
+        assign_frame.pack(fill=tk.X, expand=False, padx=10, pady=10)
+        
+        # Class combobox
+        combo_frame = ttk.Frame(assign_frame)
+        combo_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(combo_frame, text="Chọn lớp:").pack(side=tk.LEFT, padx=5)
+        self.selected_class_var = tk.StringVar()
+        self.class_combo = ttk.Combobox(combo_frame, textvariable=self.selected_class_var, width=30, state="readonly")
+        self.class_combo.pack(side=tk.LEFT, padx=5)
+        
+        # Don't call load_classes() here - remove that line
+        # Instead we'll add a method to be called after UI is fully set up
     
     def load_students(self):
         try:
@@ -1194,3 +1369,809 @@ class MainWindow(QMainWindow):
             import traceback
             print(f"Error exporting report: {e}\n{traceback.format_exc()}")
             QMessageBox.critical(self, "Lỗi", f"Lỗi khi xuất báo cáo: {str(e)}")
+    
+    def load_classes(self):
+        """Load classes data into the treeview"""
+        # Clear existing items
+        self.classes_table.setRowCount(0)
+        
+        # Make sure we're using the correct database object
+        if not hasattr(self, 'db'):
+            from app.database import Database
+            self.db = Database()
+        
+        # Get classes from database
+        try:
+            classes = self.db.get_all_classes()
+            
+            # Add to table
+            self.classes_table.setRowCount(len(classes))
+            for i, cls in enumerate(classes):
+                self.classes_table.setItem(i, 0, QTableWidgetItem(str(cls[0])))
+                self.classes_table.setItem(i, 1, QTableWidgetItem(cls[1]))
+                self.classes_table.setItem(i, 2, QTableWidgetItem(cls[2]))
+                self.classes_table.setItem(i, 3, QTableWidgetItem(cls[3]))
+        except Exception as e:
+            # If the classes table doesn't exist, make sure it's created
+            print(f"Error loading classes: {str(e)}")
+            self.db.create_tables()
+            # Try loading again (will be empty but at least won't error)
+            try:
+                classes = self.db.get_all_classes()
+                for cls in classes:
+                    self.classes_table.insert("", tk.END, values=cls)
+            except:
+                pass  # If it still fails, just show an empty list
+    
+    def on_class_select(self):
+        """Handle selection of a class in the table"""
+        selected_items = self.classes_table.selectedItems()
+        if not selected_items:
+            return
+            
+        # Get selected item data
+        class_id = selected_items[0].text()
+        name = selected_items[1].text()
+        description = selected_items[2].text()
+        
+        # Update form fields
+        self.selected_class_id.setText(class_id)
+        self.class_name_var.setText(name)
+        self.class_description_var.setText(description)
+    
+    def reset_class_form(self):
+        """Clear the class form fields"""
+        self.selected_class_id.setText("")
+        self.class_name_var.setText("")
+        self.class_description_var.setText("")
+        
+        # Clear selection in table
+        self.classes_table.clearSelection()
+    
+    def add_class(self):
+        """Add a new class"""
+        name = self.class_name_var.text().strip()
+        description = self.class_description_var.text().strip()
+        
+        if not name:
+            QMessageBox.critical(self, "Lỗi", "Tên lớp không được để trống")
+            return
+        
+        # Add to database
+        try:
+            self.face_recognition.add_class(name, description)
+            QMessageBox.information(self, "Thành công", "Thêm lớp học thành công")
+            self.load_classes()
+            self.reset_class_form()
+        except Exception as e:
+            QMessageBox.critical(self, "Lỗi", f"Không thể thêm lớp học: {str(e)}")
+    
+    def update_class(self):
+        """Update an existing class"""
+        class_id = self.selected_class_id.text()
+        if not class_id:
+            QMessageBox.critical(self, "Lỗi", "Vui lòng chọn một lớp học để cập nhật")
+            return
+        
+        name = self.class_name_var.text().strip()
+        description = self.class_description_var.text().strip()
+        
+        if not name:
+            QMessageBox.critical(self, "Lỗi", "Tên lớp không được để trống")
+            return
+        
+        # Update in database
+        try:
+            self.face_recognition.update_class(class_id, name, description)
+            QMessageBox.information(self, "Thành công", "Cập nhật lớp học thành công")
+            self.load_classes()
+            self.reset_class_form()
+        except Exception as e:
+            QMessageBox.critical(self, "Lỗi", f"Không thể cập nhật lớp học: {str(e)}")
+    
+    def delete_class(self):
+        """Delete a class"""
+        class_id = self.selected_class_id.text()
+        if not class_id:
+            QMessageBox.critical(self, "Lỗi", "Vui lòng chọn một lớp học để xóa")
+            return
+        
+        # Confirm deletion
+        confirm = QMessageBox.question(self, "Xác nhận", "Bạn có chắc chắn muốn xóa lớp học này?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if confirm == QMessageBox.No:
+            return
+        
+        # Delete from database
+        try:
+            self.face_recognition.delete_class(class_id)
+            QMessageBox.information(self, "Thành công", "Xóa lớp học thành công")
+            self.load_classes()
+            self.reset_class_form()
+        except Exception as e:
+            QMessageBox.critical(self, "Lỗi", f"Không thể xóa lớp học: {str(e)}")
+    
+    def setup_class_tab(self):
+        """Set up the class management tab with both class management and student assignment sections"""
+        # Create a paned window to divide the tab into sections
+        paned_window = ttk.PanedWindow(self.class_tab, orient=tk.VERTICAL)
+        paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Upper section - Class Management
+        upper_frame = ttk.Frame(paned_window)
+        paned_window.add(upper_frame, weight=1)
+        
+        # Class information section - left side
+        class_info_frame = ttk.LabelFrame(upper_frame, text="Thông tin lớp học")
+        class_info_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Form for class details
+        form_frame = ttk.Frame(class_info_frame)
+        form_frame.pack(padx=10, pady=10, fill=tk.X)
+        
+        # Class ID (hidden)
+        self.class_id_var = tk.IntVar(value=0)
+        
+        # Class name field
+        ttk.Label(form_frame, text="Tên lớp:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.class_name_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.class_name_var, width=30).grid(row=0, column=1, padx=5, pady=5)
+        
+        # Class description field
+        ttk.Label(form_frame, text="Mô tả:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.class_desc_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.class_desc_var, width=30).grid(row=1, column=1, padx=5, pady=5)
+        
+        # Buttons for class operations
+        btn_frame = ttk.Frame(form_frame)
+        btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(btn_frame, text="Thêm lớp", command=self.add_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cập nhật", command=self.update_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Xóa lớp", command=self.delete_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Làm mới", command=self.clear_class_form).pack(side=tk.LEFT, padx=5)
+        
+        # Class list section - right side
+        class_list_frame = ttk.LabelFrame(upper_frame, text="Danh sách lớp học")
+        class_list_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Treeview for classes
+        columns = ("ID", "Tên lớp", "Mô tả", "Ngày tạo")
+        self.classes_tree = ttk.Treeview(class_list_frame, columns=columns, show="headings", height=6)
+        
+        # Configure columns
+        self.classes_tree.heading("ID", text="ID")
+        self.classes_tree.heading("Tên lớp", text="Tên lớp")
+        self.classes_tree.heading("Mô tả", text="Mô tả")
+        self.classes_tree.heading("Ngày tạo", text="Ngày tạo")
+        
+        self.classes_tree.column("ID", width=50)
+        self.classes_tree.column("Tên lớp", width=150)
+        self.classes_tree.column("Mô tả", width=250)
+        self.classes_tree.column("Ngày tạo", width=150)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(class_list_frame, orient="vertical", command=self.classes_tree.yview)
+        self.classes_tree.configure(yscroll=scrollbar.set)
+        
+        self.classes_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Bind select event
+        self.classes_tree.bind("<<TreeviewSelect>>", self.on_class_select)
+        
+        # Lower section - Student Assignment
+        lower_frame = ttk.LabelFrame(paned_window, text="Phân công học sinh vào lớp")
+        paned_window.add(lower_frame, weight=2)
+        
+        # Class selector for student assignment
+        selector_frame = ttk.Frame(lower_frame)
+        selector_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(selector_frame, text="Chọn lớp học:").pack(side=tk.LEFT, padx=5)
+        self.selected_class_var = tk.StringVar()
+        self.class_combo = ttk.Combobox(selector_frame, textvariable=self.selected_class_var, state="readonly", width=30)
+        self.class_combo.pack(side=tk.LEFT, padx=5)
+        self.class_combo.bind("<<ComboboxSelected>>", self.on_class_combo_select)
+        
+        # Student assignment section
+        students_frame = ttk.Frame(lower_frame)
+        students_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Available students - left side
+        available_frame = ttk.LabelFrame(students_frame, text="Danh sách học sinh có sẵn")
+        available_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        columns = ("ID", "Mã SV", "Họ tên", "Lớp")
+        self.available_students_tree = ttk.Treeview(available_frame, columns=columns, show="headings", height=10)
+        
+        for col, width, text in zip(columns, [50, 100, 200, 100], ["ID", "Mã SV", "Họ tên", "Lớp"]):
+            self.available_students_tree.heading(col, text=text)
+            self.available_students_tree.column(col, width=width)
+        
+        self.available_students_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(available_frame, orient="vertical", command=self.available_students_tree.yview)
+        self.available_students_tree.configure(yscroll=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Assignment buttons - middle
+        buttons_frame = ttk.Frame(students_frame)
+        buttons_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
+        
+        ttk.Button(buttons_frame, text=">>", command=self.assign_student, width=5).pack(pady=5)
+        ttk.Button(buttons_frame, text="<<", command=self.unassign_student, width=5).pack(pady=5)
+        
+        # Assigned students - right side
+        assigned_frame = ttk.LabelFrame(students_frame, text="Học sinh trong lớp")
+        assigned_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.assigned_students_tree = ttk.Treeview(assigned_frame, columns=columns, show="headings", height=10)
+        
+        for col, width, text in zip(columns, [50, 100, 200, 100], ["ID", "Mã SV", "Họ tên", "Lớp"]):
+            self.assigned_students_tree.heading(col, text=text)
+            self.assigned_students_tree.column(col, width=width)
+        
+        self.assigned_students_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(assigned_frame, orient="vertical", command=self.assigned_students_tree.yview)
+        self.assigned_students_tree.configure(yscroll=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Now that all attributes are created, we can load data
+        try:
+            self.load_classes()
+            self.update_class_combo()
+        except Exception as e:
+            print(f"Error initializing class tab: {str(e)}")
+            # Make sure the tables exist
+            try:
+                self.db.create_tables()
+            except:
+                pass
+
+    def load_classes(self):
+        """Load all classes into the treeview"""
+        # Clear existing items
+        for item in self.classes_tree.get_children():
+            self.classes_tree.delete(item)
+        
+        try:
+            # Get classes from database
+            classes = self.db.get_all_classes()
+            
+            # Add to treeview
+            for cls in classes:
+                self.classes_tree.insert("", tk.END, values=cls)
+        except Exception as e:
+            print(f"Error loading classes: {str(e)}")
+            # Create table if it doesn't exist
+            self.db.create_tables()
+    
+    def update_class_combo(self):
+        """Update the class combobox with current classes"""
+        try:
+            # Get all classes
+            classes = self.db.get_all_classes()
+            
+            # Format for combobox
+            class_options = [f"{cls[0]}: {cls[1]}" for cls in classes]
+            
+            # Update combobox
+            self.class_combo["values"] = class_options
+        except Exception as e:
+            print(f"Error updating class combobox: {str(e)}")
+    
+    def on_class_select(self, event):
+        """Handle class selection in the treeview"""
+        selected = self.classes_tree.selection()
+        if not selected:
+            return
+        
+        # Get values
+        values = self.classes_tree.item(selected[0])["values"]
+        
+        # Update form fields
+        self.class_id_var.set(values[0])
+        self.class_name_var.set(values[1])
+        self.class_desc_var.set(values[2])
+    
+    def add_class(self):
+        """Add a new class"""
+        name = self.class_name_var.get().strip()
+        desc = self.class_desc_var.get().strip()
+        
+        if not name:
+            messagebox.showerror("Lỗi", "Tên lớp không được để trống")
+            return
+        
+        try:
+            # Add to database
+            self.db.add_class(name, desc)
+            
+            # Refresh data
+            self.load_classes()
+            self.update_class_combo()
+            self.clear_class_form()
+            
+            messagebox.showinfo("Thành công", "Đã thêm lớp học mới")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể thêm lớp học: {str(e)}")
+    
+    def update_class(self):
+        """Update an existing class"""
+        class_id = self.class_id_var.get()
+        if class_id == 0:
+            messagebox.showerror("Lỗi", "Vui lòng chọn một lớp để cập nhật")
+            return
+        
+        name = self.class_name_var.get().strip()
+        desc = self.class_desc_var.get().strip()
+        
+        if not name:
+            messagebox.showerror("Lỗi", "Tên lớp không được để trống")
+            return
+        
+        try:
+            # Update in database
+            self.db.update_class(class_id, name, desc)
+            
+            # Refresh data
+            self.load_classes()
+            self.update_class_combo()
+            self.clear_class_form()
+            
+            messagebox.showinfo("Thành công", "Đã cập nhật lớp học")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể cập nhật lớp học: {str(e)}")
+    
+    def delete_class(self):
+        """Delete a class"""
+        class_id = self.class_id_var.get()
+        if class_id == 0:
+            messagebox.showerror("Lỗi", "Vui lòng chọn một lớp để xóa")
+            return
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Xác nhận", "Bạn có chắc muốn xóa lớp học này?"):
+            return
+        
+        try:
+            # Delete from database
+            self.db.delete_class(class_id)
+            
+            # Refresh data
+            self.load_classes()
+            self.update_class_combo()
+            self.clear_class_form()
+            
+            messagebox.showinfo("Thành công", "Đã xóa lớp học")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể xóa lớp học: {str(e)}")
+    
+    def clear_class_form(self):
+        """Clear the class form fields"""
+        self.class_id_var.set(0)
+        self.class_name_var.set("")
+        self.class_desc_var.set("")
+        
+        # Clear selection
+        for selected_item in self.classes_tree.selection():
+            self.classes_tree.selection_remove(selected_item)
+    
+    def on_class_combo_select(self, event):
+        """Handle class selection in combobox for student assignment"""
+        selected = self.selected_class_var.get()
+        if not selected:
+            return
+        
+        # Extract class ID from "ID: Name" format
+        class_id = int(selected.split(":")[0])
+        
+        # Load students for this class
+        self.load_students_for_class(class_id)
+    
+    def load_students_for_class(self, class_id):
+        """Load students for the selected class"""
+        # Clear both treeviews
+        for item in self.available_students_tree.get_children():
+            self.available_students_tree.delete(item)
+        
+        for item in self.assigned_students_tree.get_children():
+            self.assigned_students_tree.delete(item)
+        
+        try:
+            # Get all students
+            all_students = self.db.get_all_students()
+            
+            # Get students in this class
+            class_students = self.db.get_students_in_class(class_id)
+            
+            # IDs of students in the class
+            class_student_ids = [student[0] for student in class_students]
+            
+            # Add students to appropriate treeviews
+            for student in all_students:
+                if student[0] in class_student_ids:
+                    self.assigned_students_tree.insert("", tk.END, values=student)
+                else:
+                    self.available_students_tree.insert("", tk.END, values=student)
+        except Exception as e:
+            print(f"Error loading students for class: {str(e)}")
+    
+    def assign_student(self):
+        """Assign selected students to the class"""
+        # Get selected class
+        selected_class = self.selected_class_var.get()
+        if not selected_class:
+            messagebox.showerror("Lỗi", "Vui lòng chọn một lớp học")
+            return
+        
+        # Extract class ID
+        class_id = int(selected_class.split(":")[0])
+        
+        # Get selected students
+        selected_students = self.available_students_tree.selection()
+        if not selected_students:
+            messagebox.showerror("Lỗi", "Vui lòng chọn học sinh để thêm vào lớp")
+            return
+        
+        try:
+            # Assign each student
+            for student_item in selected_students:
+                student_values = self.available_students_tree.item(student_item)["values"]
+                student_id = student_values[0]
+                
+                # Add to database
+                self.db.assign_student_to_class(student_id, class_id)
+            
+            # Reload students
+            self.load_students_for_class(class_id)
+            
+            messagebox.showinfo("Thành công", "Đã phân công học sinh vào lớp")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể phân công học sinh: {str(e)}")
+    
+    def unassign_student(self):
+        """Remove selected students from the class"""
+        # Get selected class
+        selected_class = self.selected_class_var.get()
+        if not selected_class:
+            messagebox.showerror("Lỗi", "Vui lòng chọn một lớp học")
+            return
+        
+        # Extract class ID
+        class_id = int(selected_class.split(":")[0])
+        
+        # Get selected students
+        selected_students = self.assigned_students_tree.selection()
+        if not selected_students:
+            messagebox.showerror("Lỗi", "Vui lòng chọn học sinh để xóa khỏi lớp")
+            return
+        
+        # Confirm removal
+        if not messagebox.askyesno("Xác nhận", "Bạn có chắc muốn xóa các học sinh này khỏi lớp?"):
+            return
+        
+        try:
+            # Remove each student
+            for student_item in selected_students:
+                student_values = self.assigned_students_tree.item(student_item)["values"]
+                student_id = student_values[0]
+                
+                # Remove from database
+                self.db.remove_student_from_class(student_id, class_id)
+            
+            # Reload students
+            self.load_students_for_class(class_id)
+            
+            messagebox.showinfo("Thành công", "Đã xóa học sinh khỏi lớp")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể xóa học sinh khỏi lớp: {str(e)}")
+
+class StudentManagementApp:
+    def __init__(self, root):
+        # ...existing code...
+        
+        # Add class management tab to the notebook
+        self.class_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.class_tab, text="Quản lý lớp")
+        
+        # Setup tabs
+        # ...existing code...
+        self.setup_class_management_tab()
+        
+    # ...existing code...
+    
+    def setup_class_management_tab(self):
+        # Create main frame for class management
+        main_frame = ttk.Frame(self.class_tab)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Split the frame horizontally
+        left_frame = ttk.LabelFrame(main_frame, text="Thông tin lớp học")
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        right_frame = ttk.LabelFrame(main_frame, text="Danh sách lớp học")
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Left frame - Class information form
+        form_frame = ttk.Frame(left_frame)
+        form_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Class ID (hidden variable)
+        self.class_id_var = tk.IntVar()
+        
+        # Class name field
+        ttk.Label(form_frame, text="Tên lớp:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.class_name_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.class_name_var, width=30).grid(row=0, column=1, padx=5, pady=5)
+        
+        # Class description field
+        ttk.Label(form_frame, text="Mô tả:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.class_desc_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.class_desc_var, width=30).grid(row=1, column=1, padx=5, pady=5)
+        
+        # Buttons for class operations
+        btn_frame = ttk.Frame(form_frame)
+        btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(btn_frame, text="Thêm lớp", command=self.add_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cập nhật", command=self.update_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Xóa lớp", command=self.delete_class).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Làm mới", command=self.clear_class_form).pack(side=tk.LEFT, padx=5)
+        
+        # Right frame - Class list
+        # Treeview for classes
+        columns = ("ID", "Tên lớp", "Mô tả", "Ngày tạo")
+        self.classes_tree = ttk.Treeview(right_frame, columns=columns, show="headings")
+        
+        # Set column headings
+        self.classes_tree.heading("ID", text="ID")
+        self.classes_tree.heading("Tên lớp", text="Tên lớp")
+        self.classes_tree.heading("Mô tả", text="Mô tả")
+        self.classes_tree.heading("Ngày tạo", text="Ngày tạo")
+        
+        # Set column widths
+        self.classes_tree.column("ID", width=50)
+        self.classes_tree.column("Tên lớp", width=150)
+        self.classes_tree.column("Mô tả", width=250)
+        self.classes_tree.column("Ngày tạo", width=150)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(right_frame, orient="vertical", command=self.classes_tree.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.classes_tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.classes_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Bind selection event
+        self.classes_tree.bind("<<TreeviewSelect>>", self.on_class_select)
+        
+        # Load classes data
+        self.load_classes_data()
+    
+    def load_classes_data(self):
+        # Clear existing items
+        for item in self.classes_tree.get_children():
+            self.classes_tree.delete(item)
+        
+        # Get all classes from database
+        classes = self.db.get_all_classes()
+        
+        # Add classes to treeview
+        for cls in classes:
+            self.classes_tree.insert("", tk.END, values=cls)
+    
+    def on_class_select(self, event):
+        # Get selected item
+        selected = self.classes_tree.selection()
+        if not selected:
+            return
+        
+        # Get values of selected item
+        values = self.classes_tree.item(selected[0], "values")
+        
+        # Set form fields
+        self.class_id_var.set(values[0])
+        self.class_name_var.set(values[1])
+        self.class_desc_var.set(values[2])
+    
+    def add_class(self):
+        # Get form values
+        name = self.class_name_var.get().strip()
+        desc = self.class_desc_var.get().strip()
+        
+        # Validate
+        if not name:
+            messagebox.showerror("Lỗi", "Tên lớp không được để trống")
+            return
+        
+        # Add class to database
+        try:
+            self.db.add_class(name, desc)
+            messagebox.showinfo("Thành công", "Đã thêm lớp học mới")
+            self.load_classes_data()
+            self.clear_class_form()
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể thêm lớp học: {str(e)}")
+    
+    def update_class(self):
+        # Get class ID
+        class_id = self.class_id_var.get()
+        if class_id == 0:
+            messagebox.showerror("Lỗi", "Vui lòng chọn một lớp để cập nhật")
+            return
+        
+        # Get form values
+        name = self.class_name_var.get().strip()
+        desc = self.class_desc_var.get().strip()
+        
+        # Validate
+        if not name:
+            messagebox.showerror("Lỗi", "Tên lớp không được để trống")
+            return
+        
+        # Update class in database
+        try:
+            self.db.update_class(class_id, name, desc)
+            messagebox.showinfo("Thành công", "Đã cập nhật lớp học")
+            self.load_classes_data()
+            self.clear_class_form()
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể cập nhật lớp học: {str(e)}")
+    
+    def delete_class(self):
+        # Get class ID
+        class_id = self.class_id_var.get()
+        if class_id == 0:
+            messagebox.showerror("Lỗi", "Vui lòng chọn một lớp để xóa")
+            return
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Xác nhận", "Bạn có chắc muốn xóa lớp học này?"):
+            return
+        
+        # Delete class from database
+        try:
+            self.db.delete_class(class_id)
+            messagebox.showinfo("Thành công", "Đã xóa lớp học")
+            self.load_classes_data()
+            self.clear_class_form()
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể xóa lớp học: {str(e)}")
+    
+    def clear_class_form(self):
+        # Clear form fields
+        self.class_id_var.set(0)
+        self.class_name_var.set("")
+        self.class_desc_var.set("")
+        
+        # Deselect treeview items
+        for selected_item in self.classes_tree.selection():
+            self.classes_tree.selection_remove(selected_item)
+    
+    # ...existing code...
+    
+    def refresh_classes_list(self):
+        """Safely refresh the classes list"""
+        try:
+            if hasattr(self, 'classes_tree'):
+                # Clear existing items
+                for item in self.classes_tree.get_children():
+                    self.classes_tree.delete(item)
+                
+                # Get classes from database
+                classes = self.db.get_all_classes()
+                
+                # Add classes to treeview
+                for cls in classes:
+                    self.classes_tree.insert("", tk.END, values=cls)
+                
+                # Update class combobox if it exists
+                if hasattr(self, 'class_combo'):
+                    class_options = [f"{cls[0]}: {cls[1]}" for cls in classes]
+                    self.class_combo["values"] = class_options
+        except Exception as e:
+            print(f"Error refreshing classes list: {str(e)}")
+
+    def on_class_select(self, event):
+        """Handle class selection in treeview"""
+        selected = self.classes_tree.selection()
+        if not selected:
+            return
+        
+        # Get item data
+        item = self.classes_tree.item(selected[0])
+        values = item["values"]
+        
+        # Update form fields
+        self.class_id_var.set(values[0])
+        self.class_name_var.set(values[1])
+        self.class_desc_var.set(values[2])
+
+    def add_class(self):
+        """Add a new class"""
+        name = self.class_name_var.get().strip()
+        desc = self.class_desc_var.get().strip()
+        
+        if not name:
+            messagebox.showerror("Lỗi", "Tên lớp không được để trống")
+            return
+        
+        try:
+            # Add class to database
+            self.db.add_class(name, desc)
+            
+            # Show success message
+            messagebox.showinfo("Thành công", "Đã thêm lớp học mới")
+            
+            # Clear form
+            self.clear_class_form()
+            
+            # Refresh class list
+            self.refresh_classes_list()
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể thêm lớp học: {str(e)}")
+
+    def update_class(self):
+        """Update an existing class"""
+        class_id = self.class_id_var.get()
+        if class_id == 0:
+            messagebox.showerror("Lỗi", "Vui lòng chọn một lớp để cập nhật")
+            return
+        
+        name = self.class_name_var.get().strip()
+        desc = self.class_desc_var.get().strip()
+        
+        if not name:
+            messagebox.showerror("Lỗi", "Tên lớp không được để trống")
+            return
+        
+        try:
+            # Update class in database
+            self.db.update_class(class_id, name, desc)
+            
+            # Show success message
+            messagebox.showinfo("Thành công", "Đã cập nhật lớp học")
+            
+            # Clear form
+            self.clear_class_form()
+            
+            # Refresh class list
+            self.refresh_classes_list()
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể cập nhật lớp học: {str(e)}")
+
+    def delete_class(self):
+        """Delete a class"""
+        class_id = self.class_id_var.get()
+        if class_id == 0:
+            messagebox.showerror("Lỗi", "Vui lòng chọn một lớp để xóa")
+            return
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Xác nhận", "Bạn có chắc muốn xóa lớp học này?"):
+            return
+        
+        try:
+            # Delete class from database
+            self.db.delete_class(class_id)
+            
+            # Show success message
+            messagebox.showinfo("Thành công", "Đã xóa lớp học")
+            
+            # Clear form
+            self.clear_class_form()
+            
+            # Refresh class list
+            self.refresh_classes_list()
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể xóa lớp học: {str(e)}")
+
+    def clear_class_form(self):
+        """Clear the class form fields"""
+        self.class_id_var.set(0)
+        self.class_name_var.set("")
+        self.class_desc_var.set("")
