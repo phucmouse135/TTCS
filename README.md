@@ -177,7 +177,3 @@ Hệ thống tích hợp các kỹ thuật chống giả mạo để ngăn chặ
 
 -   Nguyễn Đình Phúc
 -   Liên hệ: phucchuot37@gmail.com
-
-## Giấy Phép
-
-Dự án này được phân phối dưới giấy phép MIT.
