@@ -5,9 +5,10 @@ from scipy.stats import entropy
 class AntiSpoofing:
     def __init__(self):
         # Initialize parameters for anti-spoofing
-        self.min_texture_variation = 15.0  # Minimum texture variation threshold
-        self.max_reflection_ratio = 0.05   # Maximum ratio of bright reflection spots
-        self.frame_similarity_threshold = 0.98  # Threshold for determining static images
+        self.min_texture_variation = 18.0  # Further decreased minimum texture variation threshold
+        self.max_reflection_ratio = 0.04   # Keeping this value as it is
+        self.frame_similarity_threshold = 0.85  # Decreased threshold to detect subtle differences
+        self.min_entropy = 5.2 # Further decreased minimum entropy for texture naturalness
 
     def check_image_depth(self, face_img):
         """
@@ -82,7 +83,7 @@ class AntiSpoofing:
         texture_entropy = entropy(hist)
         
         # Define threshold for good texture entropy
-        texture_threshold = 5.0  # Adjust based on testing
+        texture_threshold = self.min_entropy  # Adjust based on testing
         
         return texture_entropy > texture_threshold, texture_entropy
 

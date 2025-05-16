@@ -1,6 +1,6 @@
-# Dự Án Nhận Diện Khuôn Mặt và Điểm Danh
+# Hệ Thống Nhận Diện Khuôn Mặt và Điểm Danh Thông Minh
 
-Dự án này phát triển một hệ thống nhận diện khuôn mặt và điểm danh học sinh, sử dụng các kỹ thuật học sâu và các tính năng chống giả mạo (anti-spoofing) để đảm bảo tính chính xác và an toàn.
+Dự án này phát triển một hệ thống nhận diện khuôn mặt và điểm danh học sinh tự động, sử dụng các kỹ thuật học sâu và các biện pháp chống giả mạo (anti-spoofing) để đảm bảo tính chính xác và an toàn.
 
 ## Cấu Trúc Thư Mục
 
@@ -9,7 +9,6 @@ ProjectTTCS/
 │
 ├── data/                           # Thư mục chứa dữ liệu
 │   ├── faces/                      # Thư mục chứa hình ảnh khuôn mặt của học sinh
-│   ├── haarcascades/               # Các file cascade cho việc phát hiện khuôn mặt (OpenCV)
 │   ├── face_database.csv           # CSV chứa thông tin học sinh và embeddings
 │   ├── schedules.csv               # CSV chứa thông tin lịch học
 │   └── attendance_records.csv      # CSV chứa thông tin điểm danh

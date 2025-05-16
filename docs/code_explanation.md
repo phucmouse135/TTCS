@@ -103,7 +103,9 @@ Tài liệu này cung cấp giải thích chi tiết về các hàm quan trọng
 
 -   **`FaceRecognition.__init__(self, data_dir='data/faces', database_path='data/face_database.csv')`**:
     -   Khởi tạo lớp `FaceRecognition`.
-    -   Khởi tạo các mô hình MTCNN (Multi-task Cascaded Convolutional Networks) và InceptionResnetV1.
+    -   Khởi tạo các mô hình:
+        -   **MTCNN**:  được sử dụng để phát hiện khuôn mặt trong ảnh và video.
+        -   **InceptionResnetV1 (FaceNet)**: `InceptionResnetV1` từ `facenet-pytorch` được sử dụng để tạo embeddings (đặc trưng) khuôn mặt.
     -   Tải cơ sở dữ liệu khuôn mặt từ file CSV.
 
 -   **`FaceRecognition.load_database(self)`**:
@@ -111,11 +113,11 @@ Tài liệu này cung cấp giải thích chi tiết về các hàm quan trọng
     -   Lưu trữ thông tin vào DataFrame `self.df` và dictionary `self.embeddings`.
 
 -   **`FaceRecognition.extract_face(self, img)`**:
-    -   Phát hiện khuôn mặt trong ảnh bằng cách sử dụng MTCNN.
+    -   Phát hiện khuôn mặt trong ảnh bằng cách sử dụng **Haar Cascade Classifier (OpenCV)**.
     -   Trả về danh sách các khuôn mặt đã được phát hiện.
 
 -   **`FaceRecognition.get_embedding(self, face_img)`**:
-    -   Tính toán embedding (đặc trưng) của khuôn mặt bằng cách sử dụng mô hình InceptionResnetV1.
+    -   Tính toán embedding (đặc trưng) của khuôn mặt bằng cách sử dụng mô hình **InceptionResnetV1 (FaceNet)**.
     -   Trả về embedding của khuôn mặt.
 
 -   **`FaceRecognition.add_student(self, student_code, name, img_path)`**:
@@ -134,7 +136,7 @@ Tài liệu này cung cấp giải thích chi tiết về các hàm quan trọng
     -   Tính độ tương đồng cosine giữa hai vectors.
 
 -   **`FaceRecognition.collect_faces_from_camera(self, student_code, name, num_samples=20)`**:
-     -   Collect face samples from camera for registration
+    -   Thu thập mẫu khuôn mặt từ camera để đăng ký.
 
 -   **`FaceRecognition.process_video_feed(self, schedule_id, update_callback=None)`**:
     -   Xử lý video từ webcam để nhận diện khuôn mặt và điểm danh học sinh.

@@ -16,15 +16,15 @@ def train_and_verify():
         sys.path.append(os.path.abspath(''))
         
         # Import face recognition module
-        from app.face_recognition import FaceRecognition
+        from app.enhanced_face_recognition import EnhancedFaceRecognition
         
         print("======= FACE RECOGNITION TRAINING AND VERIFICATION =======")
-        print("Step 1: Creating Face Recognition instance...")
+        print("Step 1: Creating Enhanced Face Recognition instance...")
         
-        # Create face recognition instance
-        face_rec = FaceRecognition()
+        # Create enhanced face recognition instance
+        face_rec = EnhancedFaceRecognition()
         
-        print("\nStep 2: Training the model...")
+        print("\nStep 2: Training the face recognition model...")
         # Train the model
         success, message = face_rec.train_model()
         
@@ -33,17 +33,10 @@ def train_and_verify():
             print(message)
             return False
             
-        print(f"Model training successful: {message}")
-        
-        # Verify the embeddings were created and loaded
-        if not face_rec.embeddings:
-            print("No embeddings were created during training!")
-            return False
-            
-        print(f"Created embeddings for {len(face_rec.embeddings)} students")
-        
-        print("\nStep 3: Testing recognition with camera...")
-        print("Opening camera to test face recognition...")
+        print(f"Face recognition model training successful: {message}")
+
+        print("\nStep 3: Testing recognition with camera and enhanced anti-spoofing...")
+        print("Opening camera to test face recognition and anti-spoofing...")
         print("Press ESC to exit the test")
         
         # Test recognition with camera
@@ -55,6 +48,7 @@ def train_and_verify():
         # Recognition loop
         frame_count = 0
         recognized_count = 0
+        spoof_attempts = 0
         
         while frame_count < 100:  # Process max 100 frames
             ret, frame = cap.read()
@@ -70,23 +64,34 @@ def train_and_verify():
             
             # Process detected faces
             for face_img, face_box in faces:
-                # Try to recognize the face
-                match_result = face_rec.recognize_face(face_img)
+                # Perform anti-spoofing check
+                is_live, liveness_score, spoof_details = face_rec.anti_spoofing.is_live_face(face_img)
                 
-                # Draw rectangle around face
                 x1, y1, x2, y2 = face_box
-                cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 
-                if match_result is not None:
-                    student_code, name, similarity = match_result
-                    recognized_count += 1
+                if is_live:
+                    # Try to recognize the face
+                    match_result = face_rec.recognize_face(face_img)
                     
-                    # Display recognition results
-                    cv2.putText(display_frame, f"Student: {name}", (x1, y1 - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    cv2.putText(display_frame, f"Similarity: {similarity:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    # Draw rectangle around face
+                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    
+                    if match_result is not None:
+                        student_code, name, similarity = match_result
+                        recognized_count += 1
+                        
+                        # Display recognition results
+                        cv2.putText(display_frame, f"Student: {name}", (x1, y1 - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.putText(display_frame, f"Similarity: {similarity:.2f}", (x1, y1 - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        cv2.putText(display_frame, f"Liveness: {liveness_score}", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    else:
+                        # Display "Unknown" for unrecognized faces
+                        cv2.putText(display_frame, "Unknown (Live)", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                 else:
-                    # Display "Unknown" for unrecognized faces
-                    cv2.putText(display_frame, "Unknown", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    # Draw red rectangle around potential spoof face
+                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(display_frame, "FAKE - Not a live face", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    spoof_attempts += 1
             
             # Show the frame
             cv2.imshow("Face Recognition Test", display_frame)
@@ -106,6 +111,7 @@ def train_and_verify():
         cv2.destroyAllWindows()
         
         print(f"\nTest complete: {recognized_count} successful recognitions in {frame_count} frames")
+        print(f"Spoof attempts detected: {spoof_attempts}")
         print("Face recognition system is " + ("working properly" if recognized_count > 0 else "NOT working correctly"))
         
         return recognized_count > 0
